@@ -248,7 +248,8 @@ class Query(graphene.ObjectType):
 
         location_uuid = kwargs.get("location_uuid")
         if location_uuid is not None:
-            parent_location = Location.objects.filter(uuid=location_uuid).first().parent
+            location = Location.objects.filter(uuid=location_uuid).first()
+            parent_location = location.parent if location is not None else None
             filters += [
                 Q(location__uuid=location_uuid)
                 | Q(location=parent_location)
@@ -273,7 +274,8 @@ class Query(graphene.ObjectType):
 
         location_uuid = kwargs.get("location_uuid")
         if location_uuid is not None:
-            parent_location = Location.objects.filter(uuid=location_uuid).first().parent
+            location = Location.objects.filter(uuid=location_uuid).first()
+            parent_location = location.parent if location is not None else None
             filters += [
                 Q(location__uuid=location_uuid)
                 | Q(location=parent_location)
@@ -312,7 +314,8 @@ class Query(graphene.ObjectType):
 
         location_uuid = kwargs.get("location_uuid")
         if location_uuid is not None:
-            parent_location = Location.objects.filter(uuid=location_uuid).first().parent
+            location = Location.objects.filter(uuid=location_uuid).first()
+            parent_location = location.parent if location is not None else None
             filters += [
                 Q(location__uuid=location_uuid)
                 | Q(location=parent_location)
