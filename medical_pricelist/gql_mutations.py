@@ -13,9 +13,17 @@ from .models import (
     ItemsPricelistDetail,
     ServicesPricelistMutation,
     ItemsPricelistMutation,
+    LaboratoryServicesPricelist,  
+    LaboratoryServicesPricelistDetail,  
+    LaboratoryServicesPricelistMutation,  
 )
-from .services import set_pricelist_deleted, check_unique_name_items_pricelist, check_unique_name_services_pricelist
-from medical.models import Service, Item
+from medical.models import Service, Item, LaboratoryService
+from .services import (
+    set_pricelist_deleted, 
+    check_unique_name_items_pricelist, 
+    check_unique_name_services_pricelist,
+    check_unique_name_lab_services_pricelist 
+)
 from location.models import Location
 
 
@@ -48,19 +56,20 @@ def create_or_update_pricelist(
     if current_name != incoming_name:
         if isinstance(current_pricelist, ServicesPricelist):
             if check_unique_name_services_pricelist(incoming_name):
-                raise ValidationError(
-                    _("mutation.service_name_duplicated"))
+                raise ValidationError(_("mutation.service_name_duplicated"))
         elif isinstance(current_pricelist, ItemsPricelist):
             if check_unique_name_items_pricelist(incoming_name):
-                raise ValidationError(
-                    _("mutation.item_name_duplicated"))
+                raise ValidationError(_("mutation.item_name_duplicated"))
+        elif isinstance(current_pricelist, LaboratoryServicesPricelist):  
+            if check_unique_name_lab_services_pricelist(incoming_name):
+                raise ValidationError(_("mutation.lab_service_name_duplicated"))
 
     client_mutation_id = data.pop("client_mutation_id", None)
     data.pop("client_mutation_label", None)
     price_overrules = data.pop("price_overrules", None)
     added_details = data.pop("added_details", None)
     removed_details = data.pop("removed_details", None)
-    if not data["audit_user_id"]:
+    if not data.get("audit_user_id"):
         data["audit_user_id"] = user.id_for_audit
 
     location_uuid = data.pop("location_id", None)
@@ -127,6 +136,12 @@ def create_or_update_pricelist(
             )
         elif isinstance(pricelist, ItemsPricelist):
             ItemsPricelistMutation.object_mutated(
+                user,
+                client_mutation_id=client_mutation_id,
+                pricelist=pricelist,
+            )
+        elif isinstance(pricelist, LaboratoryServicesPricelist):
+            LaboratoryServicesPricelistMutation.object_mutated(
                 user,
                 client_mutation_id=client_mutation_id,
                 pricelist=pricelist,
@@ -339,6 +354,106 @@ class DeleteItemsPricelistMutation(OpenIMISMutation):
                 continue
 
             errors += set_pricelist_deleted(pricelist)
+        if len(errors) == 1:
+            errors = errors[0]["list"]
+        return errors
+
+class LaboratoryServicesPricelistInputType(ItemsOrServicesPricelistInputType):
+    pass
+
+
+class CreateLaboratoryServicesPricelistMutation(CreateOrUpdateItemsOrServicesPricelistMutation):
+    _mutation_module = "medical_pricelist"
+    _mutation_class = "CreateLaboratoryServicesPricelistMutation"
+    pricelist_model = LaboratoryServicesPricelist
+    service_or_item_model = LaboratoryService
+    detail_model = LaboratoryServicesPricelistDetail
+
+    class Input(LaboratoryServicesPricelistInputType):
+        pass
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            cls.do_mutate(
+                MedicalPricelistConfig.gql_mutation_pricelists_medical_lab_services_add_perms,  
+                user,
+                **data,
+            )
+            return None
+        except Exception as exc:
+            return [
+                {
+                    "message": _("pricelist.mutation.failed_to_create_pricelist")
+                    % {"uuid": data.get("uuid", "new")},
+                    "detail": str(exc),
+                }
+            ]
+
+
+class UpdateLaboratoryServicesPricelistMutation(CreateOrUpdateItemsOrServicesPricelistMutation):
+    _mutation_module = "medical_pricelist"
+    _mutation_class = "UpdateLaboratoryServicesPricelistMutation"
+    pricelist_model = LaboratoryServicesPricelist
+    service_or_item_model = LaboratoryService
+    detail_model = LaboratoryServicesPricelistDetail
+
+    class Input(LaboratoryServicesPricelistInputType):
+        uuid = graphene.UUID(required=True)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            cls.do_mutate(
+                MedicalPricelistConfig.gql_mutation_pricelists_medical_lab_services_update_perms,
+                user,
+                **data,
+            )
+            return None
+        except Exception as exc:
+            return [
+                {
+                    "message": _("pricelist.mutation.failed_to_update_pricelist")
+                    % {"uuid": data["uuid"]},
+                    "detail": str(exc),
+                }
+            ]
+
+
+class DeleteLaboratoryServicesPricelistMutation(OpenIMISMutation):
+    _mutation_module = "medical_pricelist"
+    _mutation_class = "DeleteLaboratoryServicesPricelistMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.UUID)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        if not user.has_perms(
+            MedicalPricelistConfig.gql_mutation_pricelists_medical_lab_services_delete_perms  
+        ):
+            raise PermissionDenied(_("Unauthorized"))
+        
+        errors = []
+        for uuid in data["uuids"]:
+            pricelist = LaboratoryServicesPricelist.objects.filter(uuid=uuid).first()
+            if pricelist is None:
+                errors.append(
+                    {
+                        "title": uuid,
+                        "list": [
+                            {
+                                "message": _(
+                                    "pricelist.validation.id_does_not_exist"
+                                ) % {"id": uuid}
+                            }
+                        ],
+                    }
+                )
+                continue
+
+            errors += set_pricelist_deleted(pricelist)
+        
         if len(errors) == 1:
             errors = errors[0]["list"]
         return errors

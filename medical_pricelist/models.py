@@ -104,3 +104,47 @@ class ServicesPricelistMutation(UUIDModel, ObjectMutation):
     class Meta:
         managed = True
         db_table = "medical_ServicesPricelistMutation"
+
+class LaboratoryServicesPricelist(VersionedModel):
+    id = models.AutoField(db_column='PLLabServiceID', primary_key=True)
+    uuid = models.CharField(db_column='PLLabServiceUUID', max_length=36, default=uuid.uuid4, unique=True)
+    name = models.CharField(db_column='PLLabServiceName', max_length=100)
+    pricelist_date = fields.DateField(db_column='DatePL')
+    location = models.ForeignKey("location.Location", db_column="LocationId", blank=True, null=True,
+                                 on_delete=models.DO_NOTHING, related_name='lab_services_pricelists')
+    audit_user_id = models.IntegerField(db_column='AuditUserID')
+
+    class Meta:
+        managed = True
+        db_table = 'tblPLLabServices'
+
+
+class LaboratoryServicesPricelistDetail(VersionedModel, ItemsOrServicesPricelistDetail):
+    id = models.AutoField(db_column='PLLabServiceDetailID', primary_key=True)
+    lab_services_pricelist = models.ForeignKey(LaboratoryServicesPricelist, 
+                                               on_delete=models.CASCADE, 
+                                               db_column="PLLabServiceID",
+                                               related_name='details')
+    lab_service = models.ForeignKey(medical_models.LaboratoryService, 
+                                    db_column="LabServiceID", 
+                                    on_delete=models.CASCADE,
+                                    related_name='pricelist_details')
+    price_overrule = models.DecimalField(db_column="PriceOverule", max_digits=18, decimal_places=2, blank=True, null=True)
+    audit_user_id = models.IntegerField(db_column='AuditUserID')
+    model_prefix = "lab_service"
+    pricelist_field = 'lab_services_pricelist'
+    
+    objects = ItemsOrServicesPricelistDetailManager()
+
+    class Meta:
+        managed = True
+        db_table = 'tblPLLabServicesDetail'
+
+
+class LaboratoryServicesPricelistMutation(UUIDModel, ObjectMutation):
+    pricelist = models.ForeignKey(LaboratoryServicesPricelist, models.DO_NOTHING, related_name='mutations')
+    mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='lab_services_pricelists')
+
+    class Meta:
+        managed = True
+        db_table = "medical_LaboratoryServicesPricelistMutation"
