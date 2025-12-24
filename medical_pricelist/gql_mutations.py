@@ -380,6 +380,7 @@ class CreateLaboratoryServicesPricelistMutation(CreateOrUpdateItemsOrServicesPri
                 user,
                 **data,
             )
+            return None
         except Exception as exc:
             return [
                 {
