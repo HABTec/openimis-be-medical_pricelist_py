@@ -1,5 +1,5 @@
 from gettext import gettext as _
-from .models import ServicesPricelist, ItemsPricelist
+from .models import ServicesPricelist, ItemsPricelist, LaboratoryServicesPricelist
 
 
 def set_pricelist_deleted(pricelist):
@@ -36,3 +36,9 @@ def check_unique_name_items_pricelist(name):
     if ItemsPricelist.objects.filter(name=name, validity_to__isnull=True).exists():
         return [{"message": "Items pricelist name %s already exists" % name}]
     return []
+
+def check_unique_name_lab_services_pricelist(name):
+    if LaboratoryServicesPricelist.objects.filter(name=name, validity_to__isnull=True).exists():
+        return [{"message": "Laboratory services pricelist name %s already exists" % name}]
+    return []
+

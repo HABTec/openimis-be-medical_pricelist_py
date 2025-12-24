@@ -13,6 +13,8 @@ from .models import (
     ItemsPricelistDetail,
     ServicesPricelist,
     ServicesPricelistDetail,
+    LaboratoryServicesPricelist,  
+    LaboratoryServicesPricelistDetail, 
 )
 from .gql_mutations import (
     CreateServicesPricelistMutation,
@@ -21,11 +23,14 @@ from .gql_mutations import (
     CreateItemsPricelistMutation,
     UpdateItemsPricelistMutation,
     DeleteItemsPricelistMutation,
+    CreateLaboratoryServicesPricelistMutation,  
+    UpdateLaboratoryServicesPricelistMutation,
+    DeleteLaboratoryServicesPricelistMutation,
 )
 from location.schema import LocationGQLType
 import graphene_django_optimizer as gql_optimizer
 import logging
-from .services import check_unique_name_items_pricelist, check_unique_name_services_pricelist
+from .services import check_unique_name_items_pricelist, check_unique_name_services_pricelist, check_unique_name_lab_services_pricelist
 
 logger = logging.getLogger(__file__)
 
@@ -90,6 +95,34 @@ class ServicesPricelistDetailGQLType(DjangoObjectType):
         }
         connection_class = ExtendedConnection
 
+class LaboratoryServicesPricelistGQLType(DjangoObjectType):
+    class Meta:
+        model = LaboratoryServicesPricelist
+        interfaces = (graphene.relay.Node,)
+        filter_fields = {
+            "id": ["exact"],
+            "uuid": ["exact"],
+            "name": ["exact", "icontains", "istartswith"],
+            "location": ["isnull"],
+            "pricelist_date": ["exact", "gt", "gte", "lt", "lte"],
+            **prefix_filterset("location__", LocationGQLType._meta.filter_fields),
+        }
+        connection_class = ExtendedConnection
+
+
+class LaboratoryServicesPricelistDetailGQLType(DjangoObjectType):
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        return queryset.filter(validity_to=None)
+
+    class Meta:
+        model = LaboratoryServicesPricelistDetail
+        interfaces = (graphene.relay.Node,)
+        filter_fields = {
+            "lab_services_pricelist": ["exact"],
+        }
+        connection_class = ExtendedConnection
+
 
 class PriceCompactGQLType(graphene.ObjectType):
     id = graphene.Int()
@@ -99,6 +132,7 @@ class PriceCompactGQLType(graphene.ObjectType):
 class PricelistsGQLType(graphene.ObjectType):
     services = graphene.List(PriceCompactGQLType)
     items = graphene.List(PriceCompactGQLType)
+    lab_services = graphene.List(PriceCompactGQLType)
 
 
 def prices(element, parent, child, element_id, **kwargs):
@@ -118,6 +152,7 @@ class Query(graphene.ObjectType):
         PricelistsGQLType,
         services_pricelist_id=graphene.Int(),
         items_pricelist_id=graphene.Int(),
+        lab_services_pricelist_id=graphene.Int(), 
     )
     services_pricelists = DjangoFilterConnectionField(
         ServicesPricelistGQLType,
@@ -139,13 +174,27 @@ class Query(graphene.ObjectType):
         services_pricelist_name=graphene.String(required=True),
         description="Checks that the specified services pricelist name is unique."
     )
+    lab_services_pricelists = DjangoFilterConnectionField(
+        LaboratoryServicesPricelistGQLType,
+        show_history=graphene.Boolean(),
+        location_uuid=graphene.String(),
+    )
+    validate_lab_services_pricelist_name = graphene.Field(
+        graphene.Boolean,
+        lab_services_pricelist_name=graphene.String(required=True),
+        description="Checks that the specified laboratory services pricelist name is unique."
+    )
 
-    def resolve_pricelists(self, info, services_pricelist_id=None, items_pricelist_id=None, **kwargs):
+    def resolve_pricelists(self, info, 
+                          services_pricelist_id=None, 
+                          items_pricelist_id=None,
+                          lab_services_pricelist_id=None,
+                          **kwargs):
         # When the caller requests a list of pricelists, they're filtered downstream. When they request a specific PL,
         # and don't have the right to browse all pricelists, we need to verify that they do have access to that PL
         if info.context.user.is_anonymous:
             raise PermissionDenied(_("unauthorized"))
-        if services_pricelist_id or items_pricelist_id:
+        if services_pricelist_id or items_pricelist_id or lab_services_pricelist_id:
             hf = info.context.user.get_health_facility()
             if services_pricelist_id and not info.context.user.has_perms(
                 MedicalPricelistConfig.gql_query_pricelists_medical_services_perms
@@ -156,6 +205,11 @@ class Query(graphene.ObjectType):
                 MedicalPricelistConfig.gql_query_pricelists_medical_items_perms
             ):
                 if hf and hf.items_pricelist_id != items_pricelist_id:
+                    raise PermissionDenied(_("unauthorized"))
+            if lab_services_pricelist_id and not info.context.user.has_perms(
+                MedicalPricelistConfig.gql_query_pricelists_medical_lab_services_perms 
+            ):
+                if hf and hf.lab_services_pricelist_id != lab_services_pricelist_id:
                     raise PermissionDenied(_("unauthorized"))
 
         return PricelistsGQLType(
@@ -172,6 +226,13 @@ class Query(graphene.ObjectType):
                 "item_id",
                 "items_pricelist_id",
                 items_pricelist_id=items_pricelist_id,
+            ),
+            lab_services=prices( 
+                LaboratoryServicesPricelistDetail,
+                "lab_services_pricelist",
+                "lab_service_id",
+                "lab_services_pricelist_id",
+                lab_services_pricelist_id=lab_services_pricelist_id,
             ),
         )
 
@@ -237,6 +298,41 @@ class Query(graphene.ObjectType):
             raise PermissionDenied(_("unauthorized"))
         errors = check_unique_name_items_pricelist(name=kwargs['items_pricelist_name'])
         return False if errors else True
+    
+    def resolve_lab_services_pricelists(self, info, **kwargs):
+        if not info.context.user.has_perms(
+            MedicalPricelistConfig.gql_query_pricelists_medical_lab_services_perms
+        ):
+            raise PermissionDenied(_("unauthorized"))
+        
+        filters = []
+        show_history = kwargs.get("show_history", False)
+        if not show_history:
+            filters = [*filter_validity(**kwargs)]
+
+        location_uuid = kwargs.get("location_uuid")
+        if location_uuid is not None:
+            parent_location = Location.objects.filter(uuid=location_uuid).first().parent
+            filters += [
+                Q(location__uuid=location_uuid)
+                | Q(location=parent_location)
+                | Q(location=None)
+            ]
+        
+        query = LaboratoryServicesPricelist.objects.filter(*filters).order_by("name")
+        query = LocationManager().build_user_location_filter_query(info.context.user._u, queryset=query)
+
+        return gql_optimizer.query(query.all(), info)
+
+    def resolve_validate_lab_services_pricelist_name(self, info, **kwargs):
+        if not info.context.user.has_perms(
+            MedicalPricelistConfig.gql_query_pricelists_medical_lab_services_perms
+        ):
+            raise PermissionDenied(_("unauthorized"))
+        
+        errors = check_unique_name_lab_services_pricelist(name=kwargs['lab_services_pricelist_name'])
+        return False if errors else True
+    
 
 
 class Mutation(graphene.ObjectType):
@@ -247,3 +343,7 @@ class Mutation(graphene.ObjectType):
     create_items_pricelist = CreateItemsPricelistMutation.Field()
     update_items_pricelist = UpdateItemsPricelistMutation.Field()
     delete_items_pricelist = DeleteItemsPricelistMutation.Field()
+
+    create_lab_services_pricelist = CreateLaboratoryServicesPricelistMutation.Field()
+    update_lab_services_pricelist = UpdateLaboratoryServicesPricelistMutation.Field()
+    delete_lab_services_pricelist = DeleteLaboratoryServicesPricelistMutation.Field()

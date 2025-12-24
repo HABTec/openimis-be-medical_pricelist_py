@@ -14,6 +14,11 @@ DEFAULT_CFG = {
     "gql_mutation_pricelists_medical_services_update_perms": ["121203"],
     "gql_mutation_pricelists_medical_services_delete_perms": ["121204"],
     "gql_mutation_pricelists_medical_services_duplicate_perms": ["121205"],
+    "gql_query_pricelists_medical_lab_services_perms": ["121401"],
+    "gql_mutation_pricelists_medical_lab_services_add_perms": ["121402"],
+    "gql_mutation_pricelists_medical_lab_services_update_perms": ["121403"],
+    "gql_mutation_pricelists_medical_lab_services_delete_perms": ["121404"],
+    "gql_mutation_pricelists_medical_lab_services_duplicate_perms": ["121405"],
 }
 
 
@@ -31,6 +36,11 @@ class MedicalPricelistConfig(AppConfig):
     gql_mutation_pricelists_medical_services_update_perms = []
     gql_mutation_pricelists_medical_services_delete_perms = []
     gql_mutation_pricelists_medical_services_duplicate_perms = []
+    gql_query_pricelists_medical_lab_services_perms = []
+    gql_mutation_pricelists_medical_lab_services_add_perms = []
+    gql_mutation_pricelists_medical_lab_services_update_perms = []
+    gql_mutation_pricelists_medical_lab_services_delete_perms = []
+    gql_mutation_pricelists_medical_lab_services_duplicate_perms = []
 
     def __load_config(self, cfg):
         for field in cfg:
