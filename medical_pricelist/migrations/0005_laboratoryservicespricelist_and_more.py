@@ -13,7 +13,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('location', '0024_merge_20251129_1508'),
+        ('location', '0023_remove_healthfacilitycontract_uq_hf_loc_contract_valid_and_more'),
         ('core', '0032_create_tblclaimadmin'),
         ('medical', '0012_laboratoryservice_alter_service_care_type_and_more'),
         ('medical_pricelist', '0004_set_managed_to_true'),
